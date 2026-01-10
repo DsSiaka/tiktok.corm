@@ -4,7 +4,7 @@
   "description": "Educational Telegram bot for data capture demonstration",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
+  "start": "node start.js",
     "dev": "node app.js",
     "bot": "node telegrambot.js"
   },
