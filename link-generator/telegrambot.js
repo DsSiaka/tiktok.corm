@@ -40,9 +40,11 @@ const bot = new TelegramBot(token, {
 });
 
 // URL de base simplifiée
-const BASE_URL = process.env.REPLIT_DOMAINS
-    ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`
-    : (process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 5000}`);
+const BASE_URL = process.env.RENDER_EXTERNAL_URL 
+    ? process.env.RENDER_EXTERNAL_URL.replace(/\/$/, "")
+    : (process.env.REPLIT_DOMAINS
+        ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`
+        : `http://localhost:${process.env.PORT || 5000}`);
 
 // 🔐 TOKEN D'AUTHENTIFICATION SÉCURISÉ - IDENTIQUE AU SERVEUR
 const crypto = require("crypto");
