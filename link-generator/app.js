@@ -71,7 +71,11 @@ app.post("/generate-link", (req, res) => {
     const id = shortid.generate();
     links[id] = { platform, chatId, created: new Date().toISOString() };
 
-    const baseHost = process.env.REPLIT_DOMAINS ? process.env.REPLIT_DOMAINS.split(",")[0] : (process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host'));
+    const baseHost = process.env.RENDER_EXTERNAL_URL 
+        ? process.env.RENDER_EXTERNAL_URL.replace(/^https?:\/\//, "").replace(/\/$/, "")
+        : (process.env.REPLIT_DOMAINS 
+            ? process.env.REPLIT_DOMAINS.split(",")[0] 
+            : (process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host')));
     let platformUrl;
 
     switch (platform) {
