@@ -75,6 +75,7 @@ console.log(
 console.log(`🤖 Bot Telegram démarré !`);
 console.log(`📡 URL de base: ${BASE_URL}`);
 
+
 // 🎯 COMMANDE /start
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
@@ -233,7 +234,27 @@ async function sendDataById(chatId, linkId) {
         bot.sendMessage(chatId, `❌ Aucune donnée pour \`${linkId}\``);
     }
 }
+const fs = require('fs');
+const path = require('path');
 
+// Chemin vers le fichier des utilisateurs
+const usersFilePath = path.join(__dirname, 'data', 'users.json');
+
+// Charger les utilisateurs au démarrage
+let usersData = {};
+if (fs.existsSync(usersFilePath)) {
+    usersData = JSON.parse(fs.readFileSync(usersFilePath, 'utf8'));
+}
+
+// Fonction pour sauvegarder les données
+function saveUsers() {
+    if (!fs.existsSync(path.join(__dirname, 'data'))) {
+        fs.mkdirSync(path.join(__dirname, 'data'));
+    }
+    fs.writeFileSync(usersFilePath, JSON.stringify(usersData, null, 2));
+}
+
+let isAdminMode = false;
 // 🎯 COMMANDE /data [ID]
 bot.onText(/\/data (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
