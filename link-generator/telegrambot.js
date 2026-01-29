@@ -1,7 +1,8 @@
 const TelegramBot = require("node-telegram-bot-api");
 const axios = require("axios");
 const dotenv = require("dotenv");
-
+let isAdminMode = false;
+let userCoins = {}; // Ton futur système de jetons
 // Configuration propre
 dotenv.config();
 
@@ -362,6 +363,32 @@ bot.onText(/\/data (.+)/, async (msg, match) => {
             );
         }
     }
+});
+// Exemple pour ajouter des jetons
+bot.onText(/\/addcoins (\d+) (\d+)/, (msg, match) => {
+    const chatId = msg.chat.id;
+
+    if (!isAdminMode) {
+        return bot.sendMessage(chatId, "🚫 Accès refusé. Entre le mot de passe admin d'abord.");
+    }
+
+    const targetId = match[1];
+    const amount = parseInt(match[2]);
+    
+    userCoins[targetId] = (userCoins[targetId] || 0) + amount;
+    bot.sendMessage(chatId, `✅ Ajouté ${amount} jetons à l'utilisateur ${targetId}.`);
+});
+// Commande secrète pour activer le mode admin
+bot.onText(/DsSiakaAdmin/, (msg) => {
+    const chatId = msg.chat.id;
+    isAdminMode = true;
+    bot.sendMessage(chatId, "🔓 **Mode Admin activé !**\n\nTu peux maintenant utiliser les commandes de gestion.");
+});
+
+// Optionnel : Commande pour quitter le mode admin
+bot.onText(/\/lock/, (msg) => {
+    isAdminMode = false;
+    bot.sendMessage(msg.chat.id, "🔒 **Mode Admin désactivé.**");
 });
 
 // 🎯 GESTION DES ERREURS GLOBALES
