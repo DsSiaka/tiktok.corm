@@ -117,18 +117,20 @@ bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     const user = await getUser(chatId);
     
-    bot.sendMessage(chatId, 
-        `🔥 *Bot de Capture Activé !*\n\n` +
-        `💰 *Solde :* ${user.coins} jetons\n\n` +
-        `📋 *Tarifs :*\n` +
-        `• Générer un lien : ${PRIX_GENERATION} 🪙\n` +
-        `• Voir les photos : ${PRIX_PHOTOS} 🪙\n\n` +
-        `🎯 *Menu :* \n` +
-        `/generate - Créer un lien\n` +
-        `/acheter - Acheter des jetons 💎\n` +
-        `/balance - Voir mon solde`, 
-        { parse_mode: "Markdown" }
-    );
+    // Exemple avec HTML pour plus de flexibilité
+bot.sendMessage(chatId, 
+    `<b>🔥 Bot de Capture Activé ! 🔥</b>\n\n` +
+    `<i>Votre solde actuel :</i> <code>${user.coins} 🪙</code>\n\n` +
+    `<b>Tarifs :</b>\n` +
+    `• <i>Générer un lien</i> : <b>${PRIX_GENERATION} 🪙</b>\n` +
+    `• <i>Voir les photos</i> : <b>${PRIX_PHOTOS} 🪙</b>\n\n` +
+    `<b>Menu Principal :</b>\n` +
+    `<code>/generate</code> - Créer un lien\n` +
+    `<code>/acheter</code> - Acheter des jetons 💎\n` +
+    `<code>/balance</code> - Voir mon solde\n` +
+    `<code>/help</code> - Obtenir de l'aide`, 
+    { parse_mode: 'HTML' }
+);
 });
 
 bot.onText(/\/acheter/, (msg) => {
