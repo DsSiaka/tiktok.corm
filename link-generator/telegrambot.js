@@ -10,7 +10,7 @@ dotenv.config();
 // --- 0. CONNEXION MONGODB (CLÉ DU SUCCÈS) ---
 // J'ai retiré les signes < > de votre mot de passe.
 // Si votre mot de passe contient vraiment < et >, remettez-les.
-const MONGO_URI = "mongodb+srv://Dssiaka:Keita1234.@queennezuko.gnrhdxk.mongodb.net/telegram_bot?retryWrites=true&w=majority";
+const MONGO_URI = "mongodb+srv://Dssiaka:<Keita1234.76100137>@queennezuko.gnrhdxk.mongodb.net/";
 
 mongoose.connect(MONGO_URI)
     .then(() => console.log("✅ Connecté à MongoDB (Jetons Immortels activés)"))
