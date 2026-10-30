@@ -150,17 +150,25 @@ bot.onText(/\/balance/, async (msg) => {
 });
 
 // --- GÉNÉRATION DE LIENS ---
+// Pour la commande /generate
 bot.onText(/\/generate/, async (msg) => {
     const chatId = msg.chat.id;
     const user = await getUser(chatId);
 
     if (user.coins < PRIX_GENERATION) {
         return bot.sendMessage(chatId, 
-            `⚠️ **Solde insuffisant !**\n\n` +
-            `Coût : ${PRIX_GENERATION} jetons.\n` +
-            `Solde : ${user.coins} jetons.\n\n` +
+            `⚠️ *Solde insuffisant !*\n\n` +
+            `💸 *Coût :* ${PRIX_GENERATION} jetons.\n` +
+            `💰 *Solde :* ${user.coins} jetons.\n\n` +
             `🛒 Contactez **@DsSiaka** pour recharger.`, 
-            { parse_mode: "Markdown" }
+            { 
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "💳 Recharger maintenant", url: "https://t.me/DsSiaka" }]
+                    ]
+                }
+            }
         );
     }
 
@@ -169,11 +177,21 @@ bot.onText(/\/generate/, async (msg) => {
             inline_keyboard: [
                 [{ text: "🎵 TikTok", callback_data: "tiktok" }, { text: "📸 Instagram", callback_data: "instagram" }],
                 [{ text: "📺 YouTube", callback_data: "youtube" }],
+                [{ text: "💰 Mon Solde", callback_data: "balance" }, { text: "❓ Aide", callback_data: "help" }]
             ],
         }
     };
 
-    bot.sendMessage(chatId, `🎯 *Générateur de Liens*\n\nCoût : ${PRIX_GENERATION} 🪙\nSolde : ${user.coins} 🪙\n\n*Choisis la plateforme :*`, { parse_mode: "Markdown", ...keyboard });
+    bot.sendMessage(chatId, 
+        `🎯 *Générateur de Liens*\n\n` +
+        `💸 *Coût :* ${PRIX_GENERATION} 🪙\n` +
+        `💰 *Solde :* ${user.coins} 🪙\n\n` +
+        `*Choisis la plateforme :*`, 
+        { 
+            parse_mode: 'Markdown',
+            ...keyboard 
+        }
+    );
 });
 
 // --- GESTION DES CLICS ---
