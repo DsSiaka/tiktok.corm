@@ -268,7 +268,6 @@ bot.onText(/\/start/, async (msg) => {
             "primary"
         ),
         { parse_mode: 'HTML', ...mainKeyboard }
-    );
 });
 
 bot.onText(/\/acheter/, (msg) => {
