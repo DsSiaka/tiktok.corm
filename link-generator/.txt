@@ -1130,5 +1130,206 @@ function createPoll(question, options) {
 const polls = [];
 
 // Commande pour créer un sondage (admin uniquement)
-bot.onText(/\/poll (.+)/, async (
+bot.onText(/\/poll (.+)/, async (msg, match) => {
+    if (!isAdminMode) {
+        return bot.sendMessage(msg.chat.id, 
+            createStyledMessage(
+                "🚫 ACCÈS REFUSÉ",
+                "Seuls les administrateurs peuvent créer des sondages.",
+                "error"
+            ),
+            { parse_mode: 'Markdown' }
+        );
+    }
+
+    const parts = match[1].split(";").map(part => part.trim());
+    const question = parts[0];
+    const options = parts.slice(1, 11); // Limité à 10 options
+    
+    if (!question || options.length < 2) {
+        return bot.sendMessage(msg.chat.id, 
+            createStyledMessage(
+                "❌ SYNTAXE INCORRECTE",
+                "Utilisation : /poll [question];[option1];[option2];...\n" +
+                "Maximum 10 options.",
+                "error"
+            ),
+            { parse_mode: 'Markdown' }
+        );
+    }
+
+    const poll = createPoll(question, options);
+    polls.push(poll);
+
+    const pollKeyboard = createStyledKeyboard(
+        poll.options.map((option, index) => ({ 
+            text: option.text,
+            callback_data: `vote_${polls.length - 1}_${index}`
+        }))
+    );
+    
+    bot.sendMessage(msg.chat.id, 
+        createStyledMessage(
+            "📊 NOUVEAU SONDAGE",
+            `<b>Question :</b> ${question}\n\n` +
+            `<b>Options :</b>\n${poll.options.map(option => `• ${option.text}`).join('\n')}\n\n` +
+            `Cliquez sur une option pour voter.`,
+            "info"
+        ),
+        { parse_mode: 'HTML', ...pollKeyboard }
+    );
+});
+
+// Gestion des votes
+bot.on("callback_query", async (query) => {
+    const match = query.data.match(/^vote_(\d+)_(\d+)$/);
+    
+    if (match) {
+        const pollIndex = parseInt(match[1]);
+        const optionIndex = parseInt(match[2]);
+        
+        if (polls[pollIndex] && polls[pollIndex].active) {
+            const poll = polls[pollIndex];
+            const option = poll.options[optionIndex];
+            
+            if (!option.voters.includes(query.from.id)) {
+                option.voters.push(query.from.id);
+                option.votes += 1;
+                
+                await bot.answerCallbackQuery(query.id, { 
+                    text: `✅ Vous avez voté pour : ${option.text}`,
+                    show_alert: true
+                });
+                
+                // Mettre à jour le message du sondage
+                const pollKeyboard = createStyledKeyboard(
+                    poll.options.map((opt, i) => ({
+                        text: `${opt.text} (${opt.votes} votes)`,
+                        callback_data: `vote_${pollIndex}_${i}`
+                    }))
+                );
+                
+                await bot.editMessageText(
+                    createStyledMessage(
+                        "📊 SONDAGE ACTIF",
+                        `<b>Question :</b> ${poll.question}\n\n` +
+                        `<b>Options :</b>\n${poll.options.map(opt => `• ${opt.text} (${opt.votes} votes)`).join('\n')}\n\n` +
+                        `Votre vote a été enregistré.`,
+                        "info"
+                    ),
+                    {
+                        chat_id: query.message.chat.id,
+                        message_id: query.message.message_id,
+                        parse_mode: 'HTML',
+                        ...pollKeyboard
+                    }
+                );
+            } else {
+                await bot.answerCallbackQuery(query.id, { 
+                    text: "❌ Vous avez déjà voté.",
+                    show_alert: true
+                });
+            }
+        }
+    }
+});
+
+// --- SYSTÈME DE GESTION DES ADMINS ---
+
+// Fonction pour ajouter un admin
+async function addAdmin(userId) {
+    try {
+        await mongoose.connection.db.collection('admins').insertOne({ userId });
+        return true;
+    } catch (error) {
+        console.error('Erreur lors de l\'ajout d\'un admin:', error);
+        return false;
+    }
+}
+
+// Fonction pour vérifier si un utilisateur est admin
+async function isAdmin(userId) {
+    try {
+        const admin = await mongoose.connection.db.collection('admins').findOne({ userId });
+        return !!admin;
+    } catch (error) {
+        console.error('Erreur lors de la vérification admin:', error);
+        return false;
+    }
+}
+
+// Commande pour ajouter un admin (superadmin uniquement)
+bot.onText(/\/addadmin (\d+)/, async (msg, match) => {
+    if (!isAdminMode || !await isAdmin(msg.chat.id)) {
+        return bot.sendMessage(msg.chat.id, 
+            createStyledMessage(
+                "🚫 ACCÈS REFUSÉ",
+                "Seuls les superadmins peuvent ajouter des admins.",
+                "error"
+            ),
+            { parse_mode: 'Markdown' }
+        );
+    }
+
+    const targetId = match[1];
+    if (await addAdmin(targetId)) {
+        bot.sendMessage(msg.chat.id, 
+            createStyledMessage(
+                "✅ ADMIN AJOUTÉ",
+                `L'utilisateur \`${targetId}\` est maintenant un admin.`,
+                "success"
+            ),
+            { parse_mode: 'Markdown' }
+        );
+    } else {
+        bot.sendMessage(msg.chat.id, 
+            createStyledMessage(
+                "❌ ERREUR",
+                "Impossible d'ajouter cet utilisateur en tant qu'admin.",
+                "error"
+            ),
+            { parse_mode: 'Markdown' }
+        );
+    }
+});
+
+// --- FONCTIONS UTILITAIRES ---
+
+// Fonction pour formater les nombres
+function formatNumber(number) {
+    return new Intl.NumberFormat('fr-FR').format(number);
+}
+
+// Fonction pour obtenir l'heure actuelle
+function getCurrentTime() {
+    return new Date().toLocaleString('fr-FR', { 
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+}
+
+// --- DÉMARRAGE DU BOT ---
+
+console.log(`🤖 Bot Telegram dynamique démarré à ${getCurrentTime()} !`);
+
+// Message de bienvenue pour les nouveaux utilisateurs
+bot.onText(/\/start/, async (msg) => {
+    const chatId = msg.chat.id;
+    const user = await getUser(chatId);
+    
+    // Envoyer un message de bienvenue spécial
+    await sendWelcomeMessage(chatId);
+});
+
+// --- LOGS ET MAINTENANCE ---
+
+// Logs de maintenance
+setInterval(() => {
+    console.log(`🔄 Maintenance : ${getCurrentTime()}`);
+    cleanupOldData().catch(err => console.error('Erreur nettoyage:', err));
+}, 24 * 60 * 60 * 1000);
+
+// --- FIN DU CODE ---
                                               
