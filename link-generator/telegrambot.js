@@ -253,7 +253,8 @@ bot.onText(/\/start/, async (msg) => {
         { text: "💰 Mon solde", callback_data: "check_balance" },
         { text: "💎 Acheter des jetons", callback_data: "buy_coins" },
         { text: "❓ Aide", callback_data: "show_help" }
-    ], 
+    ], 2); // Ajout du paramètre de colonnes manquant
+    
     await sendTypingMessage(chatId,
         createStyledMessage(
             "🔥 BOT DE CAPTURE ACTIVÉ",
@@ -268,6 +269,7 @@ bot.onText(/\/start/, async (msg) => {
             "primary"
         ),
         { parse_mode: 'HTML', ...mainKeyboard }
+    ); // Ajout de la parenthèse fermante manquante
 });
 
 bot.onText(/\/acheter/, (msg) => {
